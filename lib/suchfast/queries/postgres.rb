@@ -4,7 +4,7 @@ module Suchfast
       QUERIES = [
         {
           query_code: :pg_indexes,
-          query: "SELECT tablename, indexdef FROM pg_indexes where schemaname='public'"
+          query: "SELECT tablename, indexname, indexdef FROM pg_indexes where schemaname='public'"
         },
         {
           query_code: :pg_stat_statements,
