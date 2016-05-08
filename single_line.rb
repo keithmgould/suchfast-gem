@@ -1,3 +1,5 @@
+require 'httparty'
+
 module Suchfast
   module Queries
     class Postgres
@@ -22,3 +24,48 @@ module Suchfast
     end
   end
 end
+
+module Suchfast
+  class DataExporter
+    class << self
+      def export
+        url = "https://79tolio5a2.execute-api.us-east-1.amazonaws.com/dev/harvester"
+
+        options = {
+          body: compile_batch.to_json,
+          headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json'}
+        }
+
+        HTTParty.post url, options
+      end
+
+      private
+
+      def compile_batch
+        batch = {}
+
+        queries = Suchfast::Queries::Postgres::QUERIES
+
+        queries.each do |query|
+          batch[query[:code]] = run_query(query[:sql])
+        end
+
+        batch[:batchId] = SecureRandom.uuid
+        batch[:token] = "12345abcdef"
+        batch[:gemVersion] = "0.4.1"
+
+        puts "batchId: #{batch[:batchId]}"
+
+        batch
+      end
+
+      def run_query(query)
+        ActiveRecord::Base.connection.execute(query).to_a
+      rescue
+        puts "something didnt work :("
+      end
+    end
+  end
+end
+
+Suchfast::DataExporter.export
