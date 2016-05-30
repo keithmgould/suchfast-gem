@@ -25,7 +25,8 @@ module Suchfast
           batch[query[:code]] = run_query(query[:sql])
         end
 
-        batch[:batchId] = SecureRandom.uuid
+        created_at_ms = (Time.now.utc.to_f * 1000).to_i
+        batch[:batchId] = "#{created_at_ms}:#{SecureRandom.uuid}"
         batch[:token] = "12345abcdef"
         batch[:gemVersion] = "0.4.1"
 

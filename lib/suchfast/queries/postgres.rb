@@ -16,7 +16,7 @@ module Suchfast
         },
         {
           code: 'BatchResults-ColumnStats',
-          sql: "select tablename as \"tableName\", attname as \"columnName\", n_distinct as cardinality from pg_stats where schemaname = 'public' and (n_distinct > 100 or (n_distinct > -1 and n_distinct < -0.5));"
+          sql: "select tablename as \"tableName\", attname as \"columnName\", n_distinct as cardinality, null_frac as \"nullFrac\", correlation, most_common_freqs as \"mostCommonFreqs\" from pg_stats where schemaname = 'public';"
         }
       ]
     end

@@ -1,4 +1,9 @@
-require 'httparty'
+# Pasted together from a few files from the gem. Please ignore silly syntax.
+#
+# Instructions:
+# 0. make sure you have httparty available
+# 1. copy this entire file
+# 2. paste into rails console
 
 module Suchfast
   module Queries
@@ -10,7 +15,7 @@ module Suchfast
         },
         {
           code: 'BatchResults-QueryStats',
-          sql: "SELECT query, calls, total_time as time, rows FROM pg_stat_statements WHERE (query not like '%pg_%') and (query not like '%_id_seq%') and (query like 'SELECT%') and (query like '%WHERE%');"
+          sql: "SELECT query, calls, total_time as time, rows FROM pg_stat_statements WHERE calls > 100 and (query not like '%pg_%') and (query not like '%_id_seq%') and (query like 'SELECT%') and (query like '%WHERE%');"
         },
         {
           code: 'BatchResults-TableStats',
@@ -18,7 +23,7 @@ module Suchfast
         },
         {
           code: 'BatchResults-ColumnStats',
-          sql: "select tablename as \"tableName\", attname as \"columnName\", n_distinct as cardinality from pg_stats where schemaname = 'public' and (n_distinct > 100 or (n_distinct > -1 and n_distinct < -0.5));"
+          sql: "select tablename as \"tableName\", attname as \"columnName\", n_distinct as cardinality, null_frac as \"nullFrac\", correlation, most_common_freqs as \"mostCommonFreqs\" from pg_stats where schemaname = 'public';"
         }
       ]
     end
@@ -32,11 +37,21 @@ module Suchfast
         url = "https://79tolio5a2.execute-api.us-east-1.amazonaws.com/dev/harvester"
 
         options = {
-          body: compile_batch.to_json,
-          headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json'}
+          body: compile_batch.to_json
         }
 
-        HTTParty.post url, options
+        uri = URI(url)
+        https = Net::HTTP.new(uri.host, uri.port)
+        https.use_ssl = true
+
+        request = Net::HTTP::Post.new(uri.path)
+        request.add_field('Content-Type', 'application/json')
+        request.add_field('Accept', 'application/json')
+        request.body = options[:body]
+
+        response = https.request(request)
+      rescue Exception => error
+        puts error.inspect
       end
 
       private
@@ -50,9 +65,9 @@ module Suchfast
           batch[query[:code]] = run_query(query[:sql])
         end
 
-        batch[:batchId] = SecureRandom.uuid
+        created_at_ms = (Time.now.utc.to_f * 1000).to_i
+        batch[:batchId] = "#{created_at_ms}:#{SecureRandom.uuid}"
         batch[:token] = "12345abcdef"
-        batch[:gemVersion] = "0.4.1"
 
         puts "batchId: #{batch[:batchId]}"
 
