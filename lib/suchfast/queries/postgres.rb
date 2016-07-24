@@ -12,7 +12,7 @@ module Suchfast
         },
         {
           code: 'BatchResults-TableStats',
-          sql: "select relname as \"tableName\", relpages as \"pageCount\", pg_size_pretty(relpages::bigint*8192) as \"prettyPageCount\" from pg_class join pg_tables on relname = tablename where schemaname = 'public';"
+          sql: "select relname as \"tableName\", reltuples as \"rowCount\", relpages as \"pageCount\", pg_size_pretty(relpages::bigint*8192) as \"prettyPageCount\" from pg_class join pg_tables on relname = tablename where schemaname = 'public';"
         },
         {
           code: 'BatchResults-ColumnStats',
