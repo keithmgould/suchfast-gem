@@ -8,17 +8,51 @@
 module Suchfast
   module Queries
     class Postgres
+      IndexQuery = <<-IndexQuery
+        select
+            t.relname as table_name,
+            i.relname as index_name,
+            array_to_string(array_agg(a.attname), ', ') AS column_names,
+            max(pg_relation_size(ix.indexrelid)) AS index_size,
+            max(pg_size_pretty(pg_relation_size(ix.indexrelid))) AS pretty_index_size,
+            max(idx_scan) AS index_scans,
+            bool_and(indisunique) AS index_unique,
+            bool_and(indisprimary) AS index_primary
+        from
+            pg_class t,
+            pg_class i,
+            pg_index ix,
+            pg_attribute a,
+            pg_indexes iss,
+            pg_stat_user_indexes sui
+        where
+            t.oid = ix.indrelid
+            and i.oid = ix.indexrelid
+            and a.attrelid = t.oid
+            and a.attnum = ANY(ix.indkey)
+            and t.relkind = 'r'
+            and iss.indexname = i.relname
+            and iss.schemaname ='public'
+            and sui.indexrelid = ix.indexrelid
+        group by
+            t.relname,
+            i.relname
+        order by
+            t.relname,
+            i.relname;
+      IndexQuery
+
       QUERIES = [
         {
           code: 'BatchResults-Indexes',
-          sql: "SELECT tablename as \"tableName\", indexname as \"indexName\", indexdef as \"indexDef\" FROM pg_indexes where schemaname='public'"
+          sql: IndexQuery
         },
         {
           code: 'BatchResults-QueryStats',
           sql: "SELECT query, calls, total_time as time, rows FROM pg_stat_statements WHERE calls > 100 and (query not like '%pg_%') and (query not like '%_id_seq%') and (query like 'SELECT%') and (query like '%WHERE%');"
         },
         {
-          code: 'BatchResults-TableStats',
+           code: 'BatchResults-TableStats',
           sql: "select relname as \"tableName\", reltuples as \"rowCount\", relpages as \"pageCount\", pg_size_pretty(relpages::bigint*8192) as \"prettyPageCount\" from pg_class join pg_tables on relname = tablename where schemaname = 'public';"
         },
         {
