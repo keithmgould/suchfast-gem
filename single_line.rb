@@ -12,27 +12,29 @@ module Suchfast
         select
             t.relname as table_name,
             i.relname as index_name,
-            array_to_string(array_agg(a.attname), ', ') AS column_names,
+            (
+                select
+                    array_to_string(array_agg(attname), ', ')
+                from
+                    pg_attribute
+                where
+                    attnum = ANY(max(ix.indkey))
+                    and attrelid = max(ix.indrelid)
+            ) as column_names,
             max(pg_relation_size(ix.indexrelid)) AS index_size,
             max(pg_size_pretty(pg_relation_size(ix.indexrelid))) AS pretty_index_size,
             max(idx_scan) AS index_scans,
-            bool_and(indisunique) AS index_unique,
-            bool_and(indisprimary) AS index_primary
+            bool_and(ix.indisunique) AS index_unique,
+            bool_and(ix.indisprimary) AS index_primary
         from
             pg_class t,
             pg_class i,
             pg_index ix,
-            pg_attribute a,
-            pg_indexes iss,
             pg_stat_user_indexes sui
         where
             t.oid = ix.indrelid
             and i.oid = ix.indexrelid
-            and a.attrelid = t.oid
-            and a.attnum = ANY(ix.indkey)
             and t.relkind = 'r'
-            and iss.indexname = i.relname
-            and iss.schemaname ='public'
             and sui.indexrelid = ix.indexrelid
         group by
             t.relname,
