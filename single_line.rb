@@ -1,48 +1,55 @@
-# Pasted together from a few files from the gem. Please ignore silly syntax.
-#
-# Instructions:
-# 0. make sure you have httparty available
-# 1. copy this entire file
-# 2. paste into rails console
-
-module Suchfast
+module Deets
   module Queries
     class Postgres
       IndexQuery = <<-IndexQuery
-        select
-            t.relname as table_name,
-            i.relname as index_name,
-            (
-                select
-                    array_to_string(array_agg(attname), ', ')
-                from
-                    pg_attribute
-                where
-                    attnum = ANY(max(ix.indkey))
-                    and attrelid = max(ix.indrelid)
-            ) as column_names,
-            max(pg_relation_size(ix.indexrelid)) AS index_size,
-            max(pg_size_pretty(pg_relation_size(ix.indexrelid))) AS pretty_index_size,
-            max(idx_scan) AS index_scans,
-            bool_and(ix.indisunique) AS index_unique,
-            bool_and(ix.indisprimary) AS index_primary
-        from
-            pg_class t,
-            pg_class i,
-            pg_index ix,
-            pg_stat_user_indexes sui
-        where
-            t.oid = ix.indrelid
-            and i.oid = ix.indexrelid
-            and t.relkind = 'r'
-            and sui.indexrelid = ix.indexrelid
-        group by
-            t.relname,
-            i.relname
-        order by
-            t.relname,
-            i.relname;
+        SELECT idx.indrelid::regclass as table_name,
+               i.relname as index_name,
+               ARRAY(
+                  SELECT pg_get_indexdef(idx.indexrelid, k + 1, true)
+                  FROM generate_subscripts(idx.indkey, 1) as k
+                  ORDER BY k
+               ) as column_names,
+               pg_relation_size(idx.indexrelid) AS index_size,
+               pg_size_pretty(pg_relation_size(idx.indexrelid)) AS pretty_index_size,
+               sui.idx_scan AS index_scans,
+               idx.indisunique AS index_unique,
+               idx.indisprimary AS index_primary
+        FROM   pg_index as idx
+        JOIN   pg_class as i ON i.oid = idx.indexrelid
+        JOIN   pg_am as am ON i.relam = am.oid
+        JOIN   pg_stat_user_indexes sui on sui.indexrelid = idx.indexrelid
+        JOIN   pg_namespace as ns ON ns.oid = i.relnamespace AND ns.nspname = ANY(current_schemas(false));
       IndexQuery
+
+      ColumnQuery = <<-ColumnQuery
+        select
+            pgs.tablename as \"tableName\",
+            pgs.attname as \"columnName\",
+            n_distinct as cardinality,
+            null_frac as \"nullFrac\",
+            correlation,
+            most_common_freqs as \"mostCommonFreqs\",
+            attnotnull as \"attNotNull\",
+            pgt.typname as \"typeName\"
+        from
+            pg_attribute pga
+            join pg_class pgc on pga.attrelid = pgc.oid
+            join pg_stats pgs on pgs.attname = pga.attname and pgs.tablename = pgc.relname
+            join pg_type pgt on pga.atttypid = pgt.oid
+        where
+            schemaname = 'public';
+      ColumnQuery
+
+      ForeignKeyQuery = <<-ForeignKeyQuery
+        SELECT
+            tc.table_name as \"tableName\",
+            kcu.column_name as \"columnName\"
+        FROM
+            information_schema.table_constraints AS tc
+            JOIN information_schema.key_column_usage AS kcu
+              ON tc.constraint_name = kcu.constraint_name
+        WHERE constraint_type = 'FOREIGN KEY';
+      ForeignKeyQuery
 
       QUERIES = [
         {
@@ -54,19 +61,23 @@ module Suchfast
           sql: "SELECT query, calls, total_time as time, rows FROM pg_stat_statements WHERE calls > 100 and (query not like '%pg_%') and (query not like '%_id_seq%') and (query like 'SELECT%') and (query like '%WHERE%');"
         },
         {
-           code: 'BatchResults-TableStats',
+          code: 'BatchResults-TableStats',
           sql: "select relname as \"tableName\", reltuples as \"rowCount\", relpages as \"pageCount\", pg_size_pretty(relpages::bigint*8192) as \"prettyPageCount\" from pg_class join pg_tables on relname = tablename where schemaname = 'public';"
         },
         {
           code: 'BatchResults-ColumnStats',
-          sql: "select tablename as \"tableName\", attname as \"columnName\", n_distinct as cardinality, null_frac as \"nullFrac\", correlation, most_common_freqs as \"mostCommonFreqs\" from pg_stats where schemaname = 'public';"
+          sql: ColumnQuery
+        },
+        {
+          code: 'BatchResults-ForeignKeys',
+          sql: ForeignKeyQuery
         }
       ]
     end
   end
 end
 
-module Suchfast
+module Deets
   class DataExporter
     class << self
       def export
@@ -95,7 +106,7 @@ module Suchfast
       def compile_batch
         batch = {}
 
-        queries = Suchfast::Queries::Postgres::QUERIES
+        queries = Deets::Queries::Postgres::QUERIES
 
         queries.each do |query|
           batch[query[:code]] = run_query(query[:sql])
@@ -119,4 +130,4 @@ module Suchfast
   end
 end
 
-Suchfast::DataExporter.export
+Deets::DataExporter.export
