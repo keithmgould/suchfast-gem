@@ -13,12 +13,22 @@ module Deets
                pg_size_pretty(pg_relation_size(idx.indexrelid)) AS pretty_index_size,
                sui.idx_scan AS index_scans,
                idx.indisunique AS index_unique,
-               idx.indisprimary AS index_primary
-        FROM   pg_index as idx
-        JOIN   pg_class as i ON i.oid = idx.indexrelid
-        JOIN   pg_am as am ON i.relam = am.oid
-        JOIN   pg_stat_user_indexes sui on sui.indexrelid = idx.indexrelid
-        JOIN   pg_namespace as ns ON ns.oid = i.relnamespace AND ns.nspname = ANY(current_schemas(false));
+               idx.indisprimary AS index_primary,
+               pgi.indexdef as index_def
+        FROM
+          pg_index as idx
+          JOIN pg_class as i
+            ON i.oid = idx.indexrelid
+          JOIN pg_am as am
+            ON i.relam = am.oid
+          JOIN pg_stat_user_indexes sui
+            ON sui.indexrelid = idx.indexrelid
+          JOIN pg_namespace as ns
+            ON ns.oid = i.relnamespace
+            AND ns.nspname = ANY(current_schemas(false))
+          JOIN pg_indexes as pgi
+            ON pgi.tablename = sui.relname
+            AND pgi.indexname = sui.indexrelname;
       IndexQuery
 
       ColumnQuery = <<-ColumnQuery
@@ -48,7 +58,8 @@ module Deets
             information_schema.table_constraints AS tc
             JOIN information_schema.key_column_usage AS kcu
               ON tc.constraint_name = kcu.constraint_name
-        WHERE constraint_type = 'FOREIGN KEY';
+        WHERE
+            constraint_type = 'FOREIGN KEY';
       ForeignKeyQuery
 
       QUERIES = [
